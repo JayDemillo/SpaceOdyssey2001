@@ -1,8 +1,11 @@
 /**
- * @author Justin Whatley
+ * Logger.aj
+ * @author Justin Whatley #29472029
+ * COMP 348 Assignment 1
  *
- * Keeps a log of all messages that are sent within the system. These critical messages
- * are displayed with the system time in milliseconds 
+ * Keeps a log of all important messages that are sent within the system. These include messages
+ * sent to the OnBoardComputer and the LifeSupport status of the Crew, and are displayed with the 
+ * system time in milliseconds 
  */
 
 import java.io.BufferedWriter;
@@ -11,69 +14,71 @@ import java.io.FileWriter;
 public aspect Logger {
 
 	String logMessage = "";
-	String fileName = "out.txt";
-
+	String fileName = "SystemLog.txt";
+	
+	/**
+	 * This pointcut captures all calls made to OnBoardComputer, excluding anything that might
+	 * have been initiated in logger for safety. This also passes the message sender's (crewMember) 
+	 * context and message target's (OnBoardComputer) context and publishes them
+	 * 
+	 * @param crewMember of type Crew
+	 * @param system of type OnBoardComputer
+	 */
 	pointcut events(Crew crewMember, OnBoardComputer system) : 
 		call(* OnBoardComputer.*(..)) &&!within(Logger) 
-		&& this(crewMember) && target(system)
-		&& !cflow(execution(* java.*.*.*(..)));
+		&& this(crewMember) && target(system);
 
+	/**
+	 * This advice outputs informations related to calls to the OnBoardComputer of 
+	 * getStatus, getDate, getMission and shutDown, to a txt file 
+	 * 
+	 * @param crewMember of type Crew
+	 * @param system of type OnBoardComputer
+	 */
 	before(Crew crewMember, OnBoardComputer system): events(crewMember, system)
 	{
-		String joinPointInfo = ""+ thisJoinPoint;
-		//System.out.println(">>> " + joinPointInfo);
-		String logMessage = "" + (System.currentTimeMillis()%1000);
-		logMessage += " : " + thisJoinPoint.getThis().getClass().getSimpleName();
-		logMessage += " : " + system.name + " : "; //prints system name
+		String logMessage = " : " + thisJoinPoint.getThis().getClass().getSimpleName(); //sets system (caller) name
+		logMessage += " : " + system.name; //sets system (caller) name
 		
-		//Sets output message for getStatus, getDate, getMissionPurpose and shutDown joinPoints
-		if (joinPointInfo.equals("call(String OnBoardComputer.getStatus())"))
-			logMessage += "getStatus\n";
-		else if (joinPointInfo.equals("call(String OnBoardComputer.getDate())"))
-			logMessage += "getDate\n";
-		else if (joinPointInfo.equals("call(String OnBoardComputer.getMissionPurpose())"))
-			logMessage += "getMissionPurpose\n";
-		else if (joinPointInfo.equals("call(void OnBoardComputer.shutDown())"))
-			logMessage += "shutDown\n";
-		else 
-			logMessage += "Unrecognized call";
+		//Sets output message to getStatus, getDate, getMissionPurpose and shutDown based on 
+		//method from signature parsing
+		String methodFromPoint = thisJoinPoint.getSignature().toString();
+		logMessage +=  " : " + methodFromPoint.substring(methodFromPoint.lastIndexOf('.') + 1, methodFromPoint.lastIndexOf('(')) +"\n";
 		
-		//System.out.println(logMessage);	
+		//outputs string to the system log file
 		writeOutput(fileName, logMessage);
 	}
 
-	pointcut lifeSupportStatus(Crew crewMember) : 
-		execution(boolean Crew.getLifeStatus())
-		&& this(crewMember); 
+	/**
+	 * This pointcut captures executions of the getLifeStatus() function of type Crew. This also
+	 * passes the message sender's (crewMember) context and publishes them
+	 * @param crewMember of type Crew
+	 */
+	pointcut lifeSupportStatus() : 
+		execution(boolean Crew.getLifeStatus()) || call(void Crew.kill());
 
-	after(Crew crewMember): lifeSupportStatus(crewMember)
+	/**
+	 * This advice stops outputs informations related to Crew lifeSupportStatus to a txt file 
+	 * @param crewMember of type Crew
+	 */
+	after(): lifeSupportStatus()
 	{
-		String logMessage = "" + (System.currentTimeMillis()%1000);
-		logMessage += " : LifeSupport";
-		logMessage += " : " + crewMember.name + " : getLifeStatus\n";
+		//Stores Class that is calling the function (can be either in LifeSupport or Logger
+		String sourceLocation = thisJoinPoint.getSourceLocation().toString();
+		String logMessage = " : " + sourceLocation.substring(0, sourceLocation.lastIndexOf('.'));
 		
-		//System.out.println(logMessage);	
+		logMessage += " : " + thisJoinPoint.getTarget().toString(); //Stores crewMember name to a string
+		
+		String methodFromPoint = thisJoinPoint.getSignature().toString(); //Stores function name to a string
+		logMessage +=  " : " + methodFromPoint.substring(methodFromPoint.lastIndexOf('.') + 1, methodFromPoint.lastIndexOf('(')) +"\n";
+		
+		//outputs string to the system log file
 		writeOutput(fileName, logMessage);
 	}
 	
-	pointcut killingAuthorization(Crew crewMember) : 
-		execution(void Crew.kill())
-		&& this(crewMember); 
-
-	after(Crew crewMember): killingAuthorization(crewMember)
-	{
-		String logMessage = "" + (System.currentTimeMillis()%1000);
-		logMessage += " : Authorization";
-		logMessage += " : " + crewMember.name + " : kill\n";
-		
-		//System.out.println(logMessage);	
-		writeOutput(fileName, logMessage);
-	}
-
-
-
+	
 	/**
-	 * Writes the passed output message to the passed text file name
+	 * Writes the passed output message to the passed text file name with mod1000 timestamps
 	 * @param fileName is the name of the file to output to
 	 * @param message is the String message to write to the file
 	 */
@@ -82,7 +87,8 @@ public aspect Logger {
 		BufferedWriter writer = null;
 		try {
 			writer = new BufferedWriter(new FileWriter(fileName, true));
-			writer.write(message);
+			//Sets line output time equivalent to the current system time mod1000 and output logString
+			writer.write(System.currentTimeMillis()%1000 + message);
 		}
 		catch (Exception e) {
 			e.printStackTrace();
